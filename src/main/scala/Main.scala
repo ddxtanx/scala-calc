@@ -14,7 +14,7 @@ object Main extends App{
       } yield next
     }
     def run_while(inpt: String): IO[String] = {
-      if(inpt.stripLineEnd == "end")
+      if(inpt.trim == "end")
         for{
           _ <- putStrlLn("Goodbye")
           v <- IO("")
@@ -29,7 +29,7 @@ object Main extends App{
             )
           case Raise(err) =>
             getNextInpt(
-              s"The computation $inpt resulted in error:\n$err."
+              s"The computation $inpt resulted in an error:\n$err."
             )
         }
         nextInpt.flatMap(run_while)

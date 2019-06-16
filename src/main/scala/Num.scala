@@ -70,6 +70,10 @@ trait Num{
         )
       }
 
+      /**
+        * Determines if there are consecutive numbers (11 21) or consecutive
+        * operations (+ -, or ~ *).
+        */
       val noConsecNumsOrOps: Boolean = {
         val singSpaceStr = sp.mkString.trim.replaceAll(" +", " ")
         val cutBySpace = singSpaceStr.split(" ")
@@ -92,6 +96,15 @@ trait Num{
       else {
         val s = sp.filter(_ != ' ') //Remove all spaces
 
+        /**
+          * Cuts the number out of a string that starts at the given index.
+          * @param string: List[Char]- Expression with number in it
+          * @param i: Int- Start index of the number.
+          * @return Maybe[(List[Char], List[Char])]
+          *         A pair of strings where the first of the pair is the cut out number
+          *         and the second of the pair is the initial expression with
+          *         the number cut out.
+          */
         def cutNumberOut(string: List[Char], i: Int): Maybe[(List[Char], List[Char])] = {
 
           if (!decAdmissibles.contains(string(i)) && string(i) != '~') Raise(
@@ -109,7 +122,7 @@ trait Num{
         }
 
         /**
-          *
+          * Finds the index of a parentheses matching to one starting at a given index.
           * @param string: List[Char]- String to find matching parentheses for.
           * @param i: Int- Index of parentheses to find match for.
           * @return Maybe[Double]: Either a Result object containing the index of the matching paren
@@ -174,6 +187,13 @@ trait Num{
           }
         }
 
+        /**
+          * Replaced the values inside parentheses with underscores.
+          * @param string: List[Char]-Expression with parentheses
+          * @return List[Char]
+          *         The initial string with the insides of all parentheses
+          *         changed.
+          */
         def replaceInsideParens(string: List[Char]): List[Char] = {
           def replace_acc(cur_string: List[Char], rem_string: List[Char], num_parens: Int): List[Char] = {
             rem_string match {
@@ -209,6 +229,14 @@ trait Num{
         def numOpsInString(string: List[Char]): Int = {
           replaceInsideParens(string).count(binOps.contains(_))
         }
+
+        /**
+          * Parses a constant to the Num it represents.
+          * @param string: List[Char]- The string representing the constant
+          * @return Maybe[Num]
+          *         Either the Num (Const or Neg(Const)) representing the number
+          *         or Raise(err) if it is not a correctly formatted Num.
+          */
         def parseConstToNum(string: List[Char]): Maybe[Num] = {
           if(!strIsDecimal(string)) Raise(
             s"Called parseConstToNum on ${string.mkString} which is not a const."
@@ -226,6 +254,14 @@ trait Num{
             })
           }
         }
+
+        /**
+          * Parses an expression in parentheses to a Num.
+          * @param string: List[Char]- The parentheses string.
+          * @return Maybe[Num]
+          *         Result(Num) if the parentheses is a valid expression
+          *         Raise(err) if something is invalid about the parentheses.
+          */
         def parseParenToNum(string: List[Char]): Maybe[Num] = {
           //println(s"Parsing paren ${string.mkString} to num")
           if(!strIsParen(string)) Raise(
@@ -234,6 +270,7 @@ trait Num{
           else if(string.head == '~') parseParenToNum(string.drop(1)).flatMap(n => Result(Neg(n)))
           else parseToNum(string.slice(1, string.length - 1))
         }
+
         /**
           * Parses an expression to the Num it represents.
           * @param string: List[Char]- The expression to parse.
@@ -248,8 +285,18 @@ trait Num{
           else if(strIsParen(stringSingleNeg)) parseParenToNum(stringSingleNeg)
           else if (strIsDecimal(stringSingleNeg)) parseConstToNum(stringSingleNeg)
           else{
+            /**
+              * Simplifies an expression (that begins with a binary operation) down
+              * to the Num it represents. Akin to a 'fold'.
+              * @param startNum: Maybe[Num]- The initial number to simplify with.
+              * @param expr: List[Char]- The remianing expression.
+              * @return Maybe[Num]
+              *         If the expression is valid, the Result(Num) it represents.
+              *         If it is invalid, the Raise(err) containing the error.
+              */
             def simplify_expr(startNum: Maybe[Num], expr: List[Char]): Maybe[Num] = {
-              def simp_until_2(cur_num: Maybe[Num], cur_expr: List[Char]): Maybe[Num] = {
+              //Simplification accumulator.
+              def simp_accu(cur_num: Maybe[Num], cur_expr: List[Char]): Maybe[Num] = {
                 //println(s"startNum: $startNum, expr: $expr, curNum: $cur_num, curExpr: $cur_expr")
                 if(cur_expr.isEmpty) cur_num
                 else if(numOpsInString(cur_expr) == 1) {
@@ -279,7 +326,7 @@ trait Num{
                         })
                       }
                       else{
-                        InvalidStartError(endStr, "simp_until_2 1 op")
+                        InvalidStartError(endStr, "simp_accu 1 op")
                       }
                     }
                     cur_num.comb(endNum, opObj(_, _))
@@ -306,7 +353,7 @@ trait Num{
                       )
                     }
                     else{
-                      InvalidStartError(cur_expr, "simp_until_2")
+                      InvalidStartError(cur_expr, "simp_accu")
                     }
                   }
                   val firstNumM: Maybe[Num] = firstNumAndStrWOM.flatMap({case (n, _) => Result(n)})
@@ -318,11 +365,17 @@ trait Num{
 
                     if(md.contains(op1) || (pm.contains(op1) && pm.contains(op2))){
                       //println(s"op1: $op1, op2: $op2")
-                      simp_until_2(cur_num.comb(firstNumM, combOp(_, _)), strWoFNum)
+                      simp_accu(cur_num.comb(firstNumM, combOp(_, _)), strWoFNum)
                     }
                     else {
-                      //println("in else")
                       //We are guaranteed for first op to be + or - and op2 to be * or /
+                      /**
+                        * Cuts out all consecutive multiplications or divisions from the string
+                        * to combine with.
+                        * @param expr: List[Char]- The expression with multiple MD's.
+                        * @return Maybe[List[Char] ]
+                        *         The consecutive MD's (2*3*4 in 1+2*3*4) in the string
+                        */
                       def allConsecMults(expr: List[Char]): Maybe[List[Char]] = {
                         def consec_mul_acc(
                                             expr_acc: List[Char],
@@ -368,14 +421,14 @@ trait Num{
                           val newCur = cur_num.comb(secondValM, combOp(_, _))
                           val newExpr = strWoNum.drop(multStr.length)
                           //println(s"secondValM: $secondValM, oldCur: $cur_num, newCur: $newCur, newExpr: $newExpr")
-                          simp_until_2(newCur, newExpr)
+                          simp_accu(newCur, newExpr)
                         })
                       })
                     }
                   })
                 }
               }
-              simp_until_2(startNum, expr)
+              simp_accu(startNum, expr)
             }
             if(strStartsWithDecimal(stringSingleNeg)){
               val numM: Maybe[(List[Char], List[Char])] = cutNumberOut(stringSingleNeg, 0)
